@@ -192,7 +192,7 @@ module ActiveModel
     # @return [Array<Symbol>] Key names of declared attributes
     # @see Serializer::attribute
     def self._attributes
-      _attributes_data.keys
+      _attributes_data.map(&:name).uniq
     end
 
     # BEGIN SERIALIZER MACROS
@@ -202,9 +202,10 @@ module ActiveModel
     #     attributes :id, :name, :recent_edits
     def self.attributes(*attrs)
       attrs = attrs.first if attrs.first.class == Array
-
+      options =  attrs.last.is_a?(Hash) ? attrs.pop : {}
+      _attributes_data[options.to_s] = []
       attrs.each do |attr|
-        attribute(attr)
+        attribute(attr, options)
       end
     end
 
@@ -222,7 +223,7 @@ module ActiveModel
     #     end
     def self.attribute(attr, options = {}, &block)
       key = options.fetch(:key, attr)
-      _attributes_data[key] = Attribute.new(attr, options, block)
+      _attributes_data[options.to_s] << Attribute.new(attr, options, block)
     end
 
     # @param [Symbol] name of the association
@@ -332,10 +333,13 @@ module ActiveModel
     # by the serializer.
     def attributes(requested_attrs = nil, reload = false)
       @attributes = nil if reload
-      @attributes ||= self.class._attributes_data.each_with_object({}) do |(key, attr), hash|
+      @attributes ||= self.class._attributes_data.each_with_object({}) do |(key, attrs), hash|
+        attr = attrs.first
         next if attr.excluded?(self)
-        next unless requested_attrs.nil? || requested_attrs.include?(key)
-        hash[key] = attr.value(self)
+        next unless requested_attrs.nil? || requested_attrs.include?(attr.name)
+        attrs.each do |attr|
+          hash[attr.name] = attr.value(self)
+        end
       end
     end
 
