@@ -171,7 +171,11 @@ module ActiveModel
 
     with_options instance_writer: false, instance_reader: false do |serializer|
       serializer.class_attribute :_attributes_data # @api private
+      serializer.class_attribute :_attributes_auto_id # @api private
+      serializer.class_attribute :_attr_new_name # @api private
       self._attributes_data ||= {}
+      self._attributes_auto_id ||= 0
+      self._attr_new_name ||= {}
     end
     with_options instance_writer: false, instance_reader: true do |serializer|
       serializer.class_attribute :_reflections
@@ -185,6 +189,8 @@ module ActiveModel
     def self.inherited(base)
       super
       base._attributes_data = _attributes_data.dup
+      base._attributes_auto_id = _attributes_auto_id.dup
+      base._attr_new_name = _attr_new_name.dup
       base._reflections = _reflections.dup
       base._links = _links.dup
     end
@@ -222,8 +228,14 @@ module ActiveModel
     #       object.edits.last(5)
     #     end
     def self.attribute(attr, options = {}, &block)
-      key = options.fetch(:key, attr)
-      _attributes_data[options.to_s] << Attribute.new(attr, options, block)
+      key = options.delete(:key)
+      if key
+        self._attr_new_name[attr] = key
+        _attributes_data[(self._attributes_auto_id+=1).to_s] = []
+        _attributes_data[self._attributes_auto_id.to_s] << Attribute.new(attr, options, block, key) unless options.blank?
+      else
+        _attributes_data[options.to_s] << Attribute.new(attr, options, block, key) unless options.blank?
+      end
     end
 
     # @param [Symbol] name of the association
@@ -333,12 +345,15 @@ module ActiveModel
     # by the serializer.
     def attributes(requested_attrs = nil, reload = false)
       @attributes = nil if reload
+      
       @attributes ||= self.class._attributes_data.each_with_object({}) do |(key, attrs), hash|
+        # puts "------------------------------>>>>>>> #{attr}"
         attr = attrs.first
         next if attr.excluded?(self)
         next unless requested_attrs.nil? || requested_attrs.include?(attr.name)
+  
         attrs.each do |attr|
-          hash[attr.name] = attr.value(self)
+          hash[self.class._attr_new_name[attr.name] || attr.name] = attr.value(self)
         end
       end
     end
