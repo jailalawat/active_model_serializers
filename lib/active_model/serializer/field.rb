@@ -3,7 +3,7 @@ module ActiveModel
     # Holds all the meta-data about a field (i.e. attribute or association) as it was
     # specified in the ActiveModel::Serializer class.
     # Notice that the field block is evaluated in the context of the serializer.
-    Field = Struct.new(:name, :options, :block) do
+    Field = Struct.new(:name, :options, :block, :key) do
       def initialize(*)
         super
 
