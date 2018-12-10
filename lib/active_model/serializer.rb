@@ -171,7 +171,13 @@ module ActiveModel
 
     with_options instance_writer: false, instance_reader: false do |serializer|
       serializer.class_attribute :_attributes_data # @api private
+      serializer.class_attribute :_attributes_auto_id # @api private
+      serializer.class_attribute :_attr_rename # @api private
+      serializer.class_attribute :_attr_names 
       self._attributes_data ||= {}
+      self._attributes_auto_id ||= 0
+      self._attr_rename ||= {}
+      self._attr_names ||= []
     end
     with_options instance_writer: false, instance_reader: true do |serializer|
       serializer.class_attribute :_reflections
@@ -185,14 +191,18 @@ module ActiveModel
     def self.inherited(base)
       super
       base._attributes_data = _attributes_data.dup
+      base._attributes_auto_id = _attributes_auto_id.dup
+      base._attr_rename = _attr_rename.dup
       base._reflections = _reflections.dup
+      base._attr_names = _attr_names.dup
       base._links = _links.dup
     end
 
     # @return [Array<Symbol>] Key names of declared attributes
     # @see Serializer::attribute
     def self._attributes
-      _attributes_data.map(&:name).uniq
+      # _attributes_data.keys
+      _attr_names.uniq
     end
 
     # BEGIN SERIALIZER MACROS
@@ -201,9 +211,10 @@ module ActiveModel
     #   class AdminAuthorSerializer < ActiveModel::Serializer
     #     attributes :id, :name, :recent_edits
     def self.attributes(*attrs)
+      # byebug
       attrs = attrs.first if attrs.first.class == Array
       options =  attrs.last.is_a?(Hash) ? attrs.pop : {}
-      _attributes_data[options.to_s] = []
+      
       attrs.each do |attr|
         attribute(attr, options)
       end
@@ -222,8 +233,26 @@ module ActiveModel
     #       object.edits.last(5)
     #     end
     def self.attribute(attr, options = {}, &block)
-      key = options.fetch(:key, attr)
-      _attributes_data[options.to_s] << Attribute.new(attr, options, block)
+      key = options.delete(:key)
+      if key && options.present?
+        _attributes_data[options.to_s] = []
+        self._attr_rename[attr] = key
+        _attr_names << attr
+        _attributes_data[options.to_s] << Attribute.new(attr, options, block, key)
+      elsif key
+        self._attr_rename[attr] = key
+        _attributes_data[(self._attributes_auto_id+=1).to_s] = []
+        _attr_names << attr
+        _attributes_data[self._attributes_auto_id.to_s] << Attribute.new(attr, options, block, key)
+      elsif options.present?
+        _attributes_data[options.to_s] = [] if _attributes_data[options.to_s].blank?
+        _attr_names << attr
+        _attributes_data[options.to_s] << Attribute.new(attr, options, block, key)
+      else
+        _attributes_data[(self._attributes_auto_id+=1).to_s] = []
+        _attr_names << attr
+        _attributes_data[self._attributes_auto_id.to_s] << Attribute.new(attr, options, block, key)
+      end
     end
 
     # @param [Symbol] name of the association
@@ -333,12 +362,15 @@ module ActiveModel
     # by the serializer.
     def attributes(requested_attrs = nil, reload = false)
       @attributes = nil if reload
+      
       @attributes ||= self.class._attributes_data.each_with_object({}) do |(key, attrs), hash|
+        # puts "------------------------------>>>>>>> #{attr}"
         attr = attrs.first
         next if attr.excluded?(self)
         next unless requested_attrs.nil? || requested_attrs.include?(attr.name)
+  
         attrs.each do |attr|
-          hash[attr.name] = attr.value(self)
+          hash[self.class._attr_rename[attr.name] || attr.name] = attr.value(self)
         end
       end
     end

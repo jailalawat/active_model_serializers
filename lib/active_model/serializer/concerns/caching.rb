@@ -73,10 +73,12 @@ module ActiveModel
         # @see Serializer::attribute
         # @see Serializer::fragmented_attributes
         def _attributes_keys
+          keys = []
           _attributes_data
-            .each_with_object({}) do |(key, attr), hash|
-            next if key == attr.name
-            hash[attr.name] = { key: key }
+            .each_with_object({}) do |attr, hash|
+            next if keys.uniq.include? attr.name
+            keys << attr.name
+            hash[attr.name] = { key: attr.name }
           end
         end
 
